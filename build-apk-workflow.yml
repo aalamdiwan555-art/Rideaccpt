@@ -1,0 +1,114 @@
+name: Build & Release APK
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build Debug + Release APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: gradle
+
+      - name: Download OpenCV Android SDK
+        run: |
+          mkdir -p app/libs
+          echo "Downloading OpenCV 4.10.0 Android AAR..."
+          curl -L "https://github.com/opencv/opencv/releases/download/4.10.0/opencv-4.10.0-android-sdk.zip" \
+               -o /tmp/opencv-android.zip --retry 3 --retry-delay 5
+          unzip -q /tmp/opencv-android.zip -d /tmp/opencv-sdk
+          cp /tmp/opencv-sdk/OpenCV-android-sdk/sdk/OpenCV.aar app/libs/OpenCV.aar
+          echo "OpenCV AAR ready: $(ls -lh app/libs/OpenCV.aar)"
+
+      - name: Grant Gradle execute permission
+        run: chmod +x gradlew
+
+      - name: Cache Gradle packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/libs.versions.toml') }}
+          restore-keys: ${{ runner.os }}-gradle-
+
+      - name: Build Debug APK
+        run: ./gradlew assembleDebug --stacktrace
+
+      - name: Build Release APK (unsigned)
+        run: ./gradlew assembleRelease --stacktrace
+
+      - name: Collect APKs into apks/ folder
+        run: |
+          mkdir -p apks
+          cp app/build/outputs/apk/debug/app-debug.apk       apks/DrClicker-debug.apk
+          cp app/build/outputs/apk/release/app-release-unsigned.apk apks/DrClicker-release-unsigned.apk
+          echo "--- Built APKs ---"
+          ls -lh apks/
+
+      - name: Upload Debug APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: DrClicker-debug-apk
+          path: apks/DrClicker-debug.apk
+          retention-days: 30
+
+      - name: Upload Release APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: DrClicker-release-apk
+          path: apks/DrClicker-release-unsigned.apk
+          retention-days: 30
+
+      - name: Create GitHub Release with APKs
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: "Dr. Clicker — Build #${{ github.run_number }}"
+          body: |
+            ## Dr. Clicker Auto-Build
+
+            **Commit:** `${{ github.sha }}`
+            **Branch:** `${{ github.ref_name }}`
+            **Built:** ${{ github.event.head_commit.timestamp }}
+
+            ### Downloads
+            | File | Description |
+            |------|-------------|
+            | `DrClicker-debug.apk` | Debug build — install directly for testing |
+            | `DrClicker-release-unsigned.apk` | Release build (unsigned) |
+
+            ### First-Install Steps
+            1. Enable **Unknown sources** on your device
+            2. Transfer the APK and install
+            3. Grant **Accessibility** + **Draw over apps** permissions
+            4. Load the Accept button template crop
+            5. Toggle Engine Activation ON
+          files: |
+            apks/DrClicker-debug.apk
+            apks/DrClicker-release-unsigned.apk
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Commit apks/ folder back to repo
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add apks/
+          git diff --staged --quiet || git commit -m "ci: update apks/ — build #${{ github.run_number }}"
+          git push
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
