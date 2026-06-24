@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Dr. Clicker</string>
+    <string name="accessibility_service_label">Dr. Clicker Auto-Accept Engine</string>
+    <string name="accessibility_service_description">Dr. Clicker uses accessibility to detect and auto-accept ride requests on the Rapido Captain app based on your configured price and distance filters.</string>
+</resources>
